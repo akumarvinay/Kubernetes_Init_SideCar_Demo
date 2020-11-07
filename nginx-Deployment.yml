@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-deployment
+spec:
+  replicas: 2
+  selector:
+     matchLabels:
+        app: nginx
+  template:
+    metadata:
+       name: nginx-pod
+       labels:
+        app: nginx
+    spec:
+      initContainers:
+       - name: openssl
+         image: deekshithsn/openssl
+         command: ["/bin/sh"]
+         args: ["-c", "mkdir -p /etc/nginx/ssl;openssl req -newkey rsa:2048 -nodes -keyout /etc/nginx/ssl/nginx.key -x509 -days 365 -out /etc/nginx/ssl/nginx.crt -subj '/C=GB/ST=London/L=London/O=Global Security/OU=IT Department/CN=example.com'"]
+         volumeMounts:
+         - name: ssl-volume
+           mountPath: /etc/nginx/ssl
+      containers:
+      - name: sidecar
+        image: xueshanf/awscli
+        command: ["/bin/sh"]
+        args: ["-c","cp /root/scripts/syncs3.sh /root/syncs3.sh;chmod 777 /root/syncs3.sh;while true; do sh /root/syncs3.sh; sleep 10;done"]
+        volumeMounts:
+        - name: nginx-logs
+          mountPath: /var/log/nginx
+        - name: aws-credentials1
+          mountPath: /root/.aws/config
+          subPath: config
+        - name: aws-credentials1
+          mountPath: /root/scripts/syncs3.sh
+          subPath: syncs3.sh
+      - name: nginx
+        image: deekshithsn/nginxhttps
+        command: ["/bin/sh"]
+        args: ["/home/auto-reload-nginx.sh"]
+        ports:
+        - containerPort: 80
+        - containerPort: 443
+        livenessProbe:
+            httpGet:
+               port: 80
+               path: /index.html
+            initialDelaySeconds: 30
+            timeoutSeconds: 1
+        volumeMounts:
+        - name: ssl-volume
+          mountPath: /etc/nginx/ssl
+        - name: nginx-conf
+          mountPath: /etc/nginx/conf.d
+        - name: nginx-logs
+          mountPath: /var/log/nginx
+      volumes:
+       - name: ssl-volume
+         emptyDir: {}
+       - name: nginx-conf
+         configMap:
+            name: "nginx-conf"
+       - name: nginx-logs
+         emptyDir: {}
+       - name: aws-credentials1
+         configMap:
+            name: "aws-cred-config"
